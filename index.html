@@ -54,7 +54,7 @@ video {
 <button id="recordBtn">● REC</button>
 
 <script>
-const M3U_URL = "https://raw.githubusercontent.com/Tanjirolivetvplaylist/Akshaybk29/refs/heads/main/jio.m3u";
+const M3U_URL = "https://raw.githubusercontent.com/Tanjirolivetvplaylist/Akshaybk29/main/jio.m3u";
 
 const video = document.getElementById("video");
 const player = new shaka.Player(video);
@@ -64,7 +64,7 @@ async function loadM3U() {
   try {
     const res = await fetch("https://corsproxy.io/?" + encodeURIComponent(M3U_URL));
     const text = await res.text();
-
+    
     if (!text || text.length < 50) {
       alert("M3U failed to load");
       return;
