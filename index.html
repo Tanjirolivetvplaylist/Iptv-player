@@ -50,26 +50,31 @@ video {
 <body>
 
 <div id="channels"></div>
-<video id="video" controls autoplay></video>
+<video id="video" controls autoplay muted playsinline></video>
 <button id="recordBtn">● REC</button>
 
 <script>
-// 🔴 PUT YOUR M3U LINK HERE
 const M3U_URL = "https://raw.githubusercontent.com/Tanjirolivetvplaylist/Akshaybk29/refs/heads/main/jio.m3u";
 
 const video = document.getElementById("video");
 const player = new shaka.Player(video);
 
-// 🔥 LOAD M3U (WITH CORS FIX)
+// 🔥 LOAD M3U (STRONG PROXY)
 async function loadM3U() {
   try {
-    const res = await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(M3U_URL));
+    const res = await fetch("https://corsproxy.io/?" + encodeURIComponent(M3U_URL));
     const text = await res.text();
+
+    if (!text || text.length < 50) {
+      alert("M3U failed to load");
+      return;
+    }
 
     const lines = text.split("\n");
     const list = document.getElementById("channels");
 
     let channel = {};
+    let firstChannel = null;
 
     for (let i = 0; i < lines.length; i++) {
       let line = lines[i].trim();
@@ -105,7 +110,14 @@ async function loadM3U() {
         div.onclick = () => playChannel({...channel});
 
         list.appendChild(div);
+
+        if (!firstChannel) firstChannel = {...channel};
       }
+    }
+
+    // 🔥 AUTO PLAY FIRST CHANNEL
+    if (firstChannel) {
+      setTimeout(() => playChannel(firstChannel), 1000);
     }
 
   } catch (e) {
@@ -117,34 +129,40 @@ async function loadM3U() {
 // ▶️ PLAY CHANNEL
 function playChannel(ch) {
 
-  player.configure({
-    drm: {
-      clearKeys: ch.keyId && ch.key ? { [ch.keyId]: ch.key } : {}
-    }
-  });
-
-  player.getNetworkingEngine().clearAllRequestFilters();
-
-  player.getNetworkingEngine().registerRequestFilter((type, request) => {
-    request.headers['Referer'] = 'https://www.jiotv.com/';
-    request.headers['User-Agent'] = "Mozilla/5.0";
-
-    if (ch.cookie) {
-      request.headers['Cookie'] = ch.cookie;
-
-      if (!request.uris[0].includes("__hdnea__=")) {
-        const sep = request.uris[0].includes('?') ? '&' : '?';
-        request.uris[0] += sep + ch.cookie;
+  try {
+    player.configure({
+      drm: {
+        clearKeys: ch.keyId && ch.key ? { [ch.keyId]: ch.key } : {}
       }
-    }
-  });
+    });
 
-  player.load(ch.mpd)
-    .then(() => video.play())
-    .catch(e => console.error("Play error:", e));
+    player.getNetworkingEngine().clearAllRequestFilters();
+
+    player.getNetworkingEngine().registerRequestFilter((type, request) => {
+      request.headers['Referer'] = 'https://www.jiotv.com/';
+      request.headers['User-Agent'] = "Mozilla/5.0";
+
+      if (ch.cookie) {
+        request.headers['Cookie'] = ch.cookie;
+
+        if (!request.uris[0].includes("__hdnea__=")) {
+          const sep = request.uris[0].includes('?') ? '&' : '?';
+          request.uris[0] += sep + ch.cookie;
+        }
+      }
+    });
+
+    player.load(ch.mpd).then(() => {
+      video.muted = true;
+      video.play();
+    });
+
+  } catch (e) {
+    console.error("Play error:", e);
+  }
 }
 
-// 🎥 RECORD FUNCTION
+// 🎥 RECORD
 let recorder;
 let chunks = [];
 
@@ -190,4 +208,4 @@ loadM3U();
 </script>
 
 </body>
-  </html>
+</html>
