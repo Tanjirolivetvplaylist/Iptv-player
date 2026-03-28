@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.6.0/shaka-player.compiled.js"></script>
+
+<style>
+body { margin:0; background:black; color:white; font-family:sans-serif; }
+
+#channels {
+  position:absolute;
+  left:0;
+  width:240px;
+  height:100%;
+  overflow:auto;
+  background:#111;
+}
+
+.channel {
+  padding:10px;
+  border-bottom:1px solid #333;
+  cursor:pointer;
+}
+.channel:hover { background:#222; }
+
+video {
+  position:absolute;
+  left:240px;
+  width:calc(100% - 240px);
+  height:100vh;
+  background:black;
+}
+
+#recordBtn {
+  position:absolute;
+  bottom:20px;
+  right:20px;
+  padding:12px;
+  background:red;
+  color:white;
+  border:none;
+  border-radius:5px;
+  z-index:9999;
+}
+</style>
+</head>
+
+<body>
+
+<div id="channels"></div>
+<video id="video" controls autoplay></video>
+<button id="recordBtn">● REC</button>
+
+<script>
+// 🔴 PUT YOUR M3U LINK HERE
+const M3U_URL = "https://df6d.short.gy/tpexlmoi.m3u";
+
+const video = document.getElementById("video");
+const player = new shaka.Player(video);
+
+// 🔥 LOAD M3U (WITH CORS FIX)
+async function loadM3U() {
+  try {
+    const res = await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(M3U_URL));
+    const text = await res.text();
+
+    const lines = text.split("\n");
+    const list = document.getElementById("channels");
+
+    let channel = {};
+
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i].trim();
+
+      if (line.startsWith("#EXTINF")) {
+        channel = {};
+        channel.name = line.split(",")[1] || "Channel";
+      }
+
+      else if (line.includes("license_key")) {
+        const key = line.split("=")[1];
+        if (key.includes(":")) {
+          const parts = key.split(":");
+          channel.keyId = parts[0];
+          channel.key = parts[1];
+        }
+      }
+
+      else if (line.startsWith("#EXTHTTP")) {
+        try {
+          const json = JSON.parse(line.replace("#EXTHTTP:", ""));
+          channel.cookie = json.cookie;
+        } catch {}
+      }
+
+      else if (line.startsWith("http")) {
+        channel.mpd = line;
+
+        const div = document.createElement("div");
+        div.className = "channel";
+        div.textContent = channel.name;
+
+        div.onclick = () => playChannel({...channel});
+
+        list.appendChild(div);
+      }
+    }
+
+  } catch (e) {
+    console.error("M3U Load Error:", e);
+    alert("Failed to load playlist");
+  }
+}
+
+// ▶️ PLAY CHANNEL
+function playChannel(ch) {
+
+  player.configure({
+    drm: {
+      clearKeys: ch.keyId && ch.key ? { [ch.keyId]: ch.key } : {}
+    }
+  });
+
+  player.getNetworkingEngine().clearAllRequestFilters();
+
+  player.getNetworkingEngine().registerRequestFilter((type, request) => {
+    request.headers['Referer'] = 'https://www.jiotv.com/';
+    request.headers['User-Agent'] = "Mozilla/5.0";
+
+    if (ch.cookie) {
+      request.headers['Cookie'] = ch.cookie;
+
+      if (!request.uris[0].includes("__hdnea__=")) {
+        const sep = request.uris[0].includes('?') ? '&' : '?';
+        request.uris[0] += sep + ch.cookie;
+      }
+    }
+  });
+
+  player.load(ch.mpd)
+    .then(() => video.play())
+    .catch(e => console.error("Play error:", e));
+}
+
+// 🎥 RECORD FUNCTION
+let recorder;
+let chunks = [];
+
+const recordBtn = document.getElementById("recordBtn");
+
+recordBtn.onclick = () => {
+
+  if (!recorder || recorder.state === "inactive") {
+
+    const stream = video.captureStream(30);
+
+    recorder = new MediaRecorder(stream, {
+      mimeType: "video/webm"
+    });
+
+    chunks = [];
+
+    recorder.ondataavailable = e => {
+      if (e.data.size > 0) chunks.push(e.data);
+    };
+
+    recorder.onstop = () => {
+      const blob = new Blob(chunks, { type: "video/webm" });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "recorded.webm";
+      a.click();
+    };
+
+    recorder.start();
+    recordBtn.textContent = "■ STOP";
+
+  } else {
+    recorder.stop();
+    recordBtn.textContent = "● REC";
+  }
+};
+
+// 🚀 START
+loadM3U();
+</script>
+
+</body>
+</html>
