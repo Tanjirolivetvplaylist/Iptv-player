@@ -54,22 +54,35 @@ video {
 <button id="recordBtn">● REC</button>
 
 <script>
+
+// ✅ USE jsDelivr (NO CORS ISSUE)
 const M3U_URL =
-  "https://raw.githubusercontent.com/Tanjirolivetvplaylist/Akshaybk29/main/jio.m3u";
+  "https://cdn.jsdelivr.net/gh/Tanjirolivetvplaylist/Akshaybk29@main/jio.m3u";
 
 const video = document.getElementById("video");
 const player = new shaka.Player(video);
 
-// 🔥 LOAD M3U (STRONG PROXY)
+// 🔥 LOAD PLAYLIST
 async function loadM3U() {
   try {
-    const res = await 
-      fetch("https://corsproxy.io/?" + encodeURIComponent(M3U_URL));
-    const text = await res.text();
-    
+
+    let res;
+    let text;
+
+    // ✅ Try direct first
+    try {
+      res = await fetch(M3U_URL);
+      text = await res.text();
+    } catch {}
+
+    // 🔁 fallback proxy (if direct fails)
     if (!text || text.length < 50) {
-      alert("M3U failed to load");
-      return;
+      res = await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(M3U_URL));
+      text = await res.text();
+    }
+
+    if (!text || text.length < 50) {
+      throw new Error("Playlist empty or blocked");
     }
 
     const lines = text.split("\n");
@@ -78,8 +91,8 @@ async function loadM3U() {
     let channel = {};
     let firstChannel = null;
 
-    for (let i = 0; i < lines.length; i++) {
-      let line = lines[i].trim();
+    lines.forEach(line => {
+      line = line.trim();
 
       if (line.startsWith("#EXTINF")) {
         channel = {};
@@ -110,58 +123,54 @@ async function loadM3U() {
         div.textContent = channel.name;
 
         div.onclick = () => playChannel({...channel});
-
         list.appendChild(div);
 
         if (!firstChannel) firstChannel = {...channel};
       }
-    }
+    });
 
-    // 🔥 AUTO PLAY FIRST CHANNEL
+    // ▶️ AUTO PLAY FIRST
     if (firstChannel) {
       setTimeout(() => playChannel(firstChannel), 1000);
     }
 
   } catch (e) {
-    console.error("M3U Load Error:", e);
-    alert("Failed to load playlist");
+    console.error("M3U ERROR:", e);
+    alert("❌ Playlist not loading\nCheck your M3U link");
   }
 }
 
 // ▶️ PLAY CHANNEL
 function playChannel(ch) {
 
-  try {
-    player.configure({
-      drm: {
-        clearKeys: ch.keyId && ch.key ? { [ch.keyId]: ch.key } : {}
+  player.configure({
+    drm: {
+      clearKeys: ch.keyId && ch.key ? { [ch.keyId]: ch.key } : {}
+    }
+  });
+
+  player.getNetworkingEngine().clearAllRequestFilters();
+
+  player.getNetworkingEngine().registerRequestFilter((type, request) => {
+    request.headers['Referer'] = 'https://www.jiotv.com/';
+    request.headers['User-Agent'] = "Mozilla/5.0";
+
+    if (ch.cookie) {
+      request.headers['Cookie'] = ch.cookie;
+
+      if (!request.uris[0].includes("__hdnea__=")) {
+        const sep = request.uris[0].includes('?') ? '&' : '?';
+        request.uris[0] += sep + ch.cookie;
       }
-    });
+    }
+  });
 
-    player.getNetworkingEngine().clearAllRequestFilters();
-
-    player.getNetworkingEngine().registerRequestFilter((type, request) => {
-      request.headers['Referer'] = 'https://www.jiotv.com/';
-      request.headers['User-Agent'] = "Mozilla/5.0";
-
-      if (ch.cookie) {
-        request.headers['Cookie'] = ch.cookie;
-
-        if (!request.uris[0].includes("__hdnea__=")) {
-          const sep = request.uris[0].includes('?') ? '&' : '?';
-          request.uris[0] += sep + ch.cookie;
-        }
-      }
-    });
-
-    player.load(ch.mpd).then(() => {
+  player.load(ch.mpd)
+    .then(() => {
       video.muted = true;
       video.play();
-    });
-
-  } catch (e) {
-    console.error("Play error:", e);
-  }
+    })
+    .catch(e => console.error("PLAY ERROR:", e));
 }
 
 // 🎥 RECORD
@@ -176,10 +185,7 @@ recordBtn.onclick = () => {
 
     const stream = video.captureStream(30);
 
-    recorder = new MediaRecorder(stream, {
-      mimeType: "video/webm"
-    });
-
+    recorder = new MediaRecorder(stream);
     chunks = [];
 
     recorder.ondataavailable = e => {
@@ -187,7 +193,7 @@ recordBtn.onclick = () => {
     };
 
     recorder.onstop = () => {
-      const blob = new Blob(chunks, { type: "video/webm" });
+      const blob = new Blob(chunks);
       const url = URL.createObjectURL(blob);
 
       const a = document.createElement("a");
@@ -207,6 +213,7 @@ recordBtn.onclick = () => {
 
 // 🚀 START
 loadM3U();
+
 </script>
 
 </body>
